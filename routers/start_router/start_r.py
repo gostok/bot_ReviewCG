@@ -158,3 +158,16 @@ async def cmd_answer_review(message: types.Message, state: FSMContext):
     await message.answer(f"Введите ответ на отзыв #{review_id}:")
     await state.set_state(AdminAnswer.waiting_for_answer)
 
+
+@start_router.message(Command(commands=["admin"]))
+async def cmd_admin(message: types.Message):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        await message.answer("Команда доступна только администратору.")
+        return
+    
+    await message.answer("📋 *Админ команды:*\n\n\
+        '/reviews' - просмотр не обработанных отзывов;\n\
+        '/all_reviews' - просмотр всех отзывов обработанных (с ответами от админа) и не обработанных;\n\
+        '/answer &lt;id&gt;' - ответить на отзыв с определенным id.", parse_mode="HTML")
+    
