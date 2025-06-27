@@ -26,7 +26,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @start_router.callback_query(lambda c: c.data == "start_review")
 async def callback_start_review(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Пожалуйста, напишите ваш отзыв.")
-    await state.set_state(ReviewStates.waiting_for_review)  # Используем объект состояния, а не строку
+    await state.set_state(ReviewStates.waiting_for_review)  
     await callback.answer()
 
 @start_router.message(Command('reviews'))
