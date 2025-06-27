@@ -9,11 +9,14 @@ from config.create_bot import bot, ADMIN
 from routers.review_router.review_keyboards import get_start_review_kb
 from routers.states import ReviewStates, AdminAnswer  # импорт состояний из общего модуля
 
+
 start_router = Router()
 review_db = ReviewDB()
 
+
 def is_admin(user_id: int) -> bool:
     return user_id == int(ADMIN)
+
 
 @start_router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -23,11 +26,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
         reply_markup=get_start_review_kb()
     )
 
+
 @start_router.callback_query(lambda c: c.data == "start_review")
 async def callback_start_review(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Пожалуйста, напишите ваш отзыв.")
     await state.set_state(ReviewStates.waiting_for_review)  
     await callback.answer()
+
 
 @start_router.message(Command('reviews'))
 async def cmd_reviews(message: types.Message):
@@ -48,6 +53,7 @@ async def cmd_reviews(message: types.Message):
         ])
         await message.answer(text, reply_markup=kb)
 
+
 @start_router.callback_query(lambda c: c.data and c.data.startswith("answer_"))
 async def callback_answer_review(callback: CallbackQuery, state: FSMContext):
     user = callback.from_user.id
@@ -64,6 +70,7 @@ async def callback_answer_review(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminAnswer.waiting_for_answer)
     await callback.answer()
 
+
 @start_router.message(AdminAnswer.waiting_for_answer)
 async def process_admin_answer(message: types.Message, state: FSMContext):
     data = await state.get_data()
@@ -78,11 +85,10 @@ async def process_admin_answer(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    review_db.mark_review_answered(review_id)
+    review_db.mark_review_answered(review_id, answer_text)
 
     await message.answer("Ответ отправлен и отзыв помечен как отвеченный.")
     await state.clear()
-
 
 
 @start_router.message(Command('all_reviews'))
@@ -112,9 +118,11 @@ async def cmd_all_reviews(message: types.Message):
 
     if answered:
         await message.answer("✅ *Обработанные отзывы:*", parse_mode="Markdown")
-        for review_id, user_id, username, review_text in answered:
-            text = f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id}):\n\n{review_text}"
-            await message.answer(text)
+        for review_id, user_id, username, review_text, admin_answer in answered:
+            text = (f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id}):\n\n"
+                    f"{review_text}\n\n"
+                    f"💬 *Ответ администратора:*\n{admin_answer}")
+            await message.answer(text, parse_mode="Markdown")
     else:
         await message.answer("Нет обработанных отзывов.")
 
@@ -126,9 +134,8 @@ async def cmd_answer_review(message: types.Message, state: FSMContext):
         await message.answer("Команда доступна только администратору.")
         return
 
-    # Получаем полный текст сообщения, например "/answer 123"
     text = message.text or ""
-    parts = text.split(maxsplit=1)  # разбиваем на команду и аргумент
+    parts = text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].isdigit():
         await message.answer("Пожалуйста, укажите ID отзыва. Пример: /answer 123")
         return
