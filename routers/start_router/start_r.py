@@ -82,3 +82,38 @@ async def process_admin_answer(message: types.Message, state: FSMContext):
 
     await message.answer("Ответ отправлен и отзыв помечен как отвеченный.")
     await state.clear()
+
+
+
+@start_router.message(Command('all_reviews'))
+async def cmd_all_reviews(message: types.Message):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        await message.answer("Команда доступна только администратору.")
+        return
+
+    unanswered = review_db.get_unanswered_reviews()
+    answered = review_db.get_answered_reviews()
+
+    if not unanswered and not answered:
+        await message.answer("Отзывов пока нет.")
+        return
+
+    if unanswered:
+        await message.answer("📋 *Необработанные отзывы:*", parse_mode="Markdown")
+        for review_id, user_id, username, review_text in unanswered:
+            text = f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id}):\n\n{review_text}"
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Ответить", callback_data=f"answer_{review_id}_{user_id}")]
+            ])
+            await message.answer(text, reply_markup=kb)
+    else:
+        await message.answer("Нет необработанных отзывов.")
+
+    if answered:
+        await message.answer("✅ *Обработанные отзывы:*", parse_mode="Markdown")
+        for review_id, user_id, username, review_text in answered:
+            text = f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id}):\n\n{review_text}"
+            await message.answer(text)
+    else:
+        await message.answer("Нет обработанных отзывов.")

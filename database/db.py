@@ -42,5 +42,13 @@ class ReviewDB:
                 (review_id,)
             )
 
+    def get_answered_reviews(self) -> List[Tuple[int, int, Optional[str], str]]:
+        """Получить список обработанных отзывов (id, user_id, username, review)"""
+        cursor = self.conn.execute(
+            "SELECT id, user_id, username, review FROM reviews WHERE answered = 1"
+        )
+        return cursor.fetchall()
+
+
     def close(self):
         self.conn.close()
