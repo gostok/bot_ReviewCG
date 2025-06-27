@@ -117,3 +117,37 @@ async def cmd_all_reviews(message: types.Message):
             await message.answer(text)
     else:
         await message.answer("Нет обработанных отзывов.")
+
+
+@start_router.message(Command(commands=["answer"]))
+async def cmd_answer_review(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    if not is_admin(user_id):
+        await message.answer("Команда доступна только администратору.")
+        return
+
+    # Получаем полный текст сообщения, например "/answer 123"
+    text = message.text or ""
+    parts = text.split(maxsplit=1)  # разбиваем на команду и аргумент
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Пожалуйста, укажите ID отзыва. Пример: /answer 123")
+        return
+
+    review_id = int(parts[1])
+
+    cursor = review_db.conn.execute(
+        "SELECT user_id, answered FROM reviews WHERE id = ?", (review_id,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        await message.answer(f"Отзыв с ID {review_id} не найден.")
+        return
+    review_user_id, answered = row
+    if answered:
+        await message.answer(f"Отзыв #{review_id} уже обработан.")
+        return
+
+    await state.update_data(review_id=review_id, user_id=review_user_id)
+    await message.answer(f"Введите ответ на отзыв #{review_id}:")
+    await state.set_state(AdminAnswer.waiting_for_answer)
+
