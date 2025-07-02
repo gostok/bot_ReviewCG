@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from database.db import ReviewDB
-from config.create_bot import bot, ADMIN
+from config.create_bot import bot, ADMIN, ADMINISTRATOR, ADMINISTRATOR2
 
 from routers.review_router.review_keyboards import get_start_review_kb
 from routers.states import ReviewStates, AdminAnswer  # импорт состояний из общего модуля
@@ -15,23 +15,7 @@ review_db = ReviewDB()
 
 
 def is_admin(user_id: int) -> bool:
-    return user_id == int(ADMIN)
-
-
-@start_router.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Добро пожаловать! Нажмите кнопку ниже, чтобы оставить отзыв.",
-        reply_markup=get_start_review_kb()
-    )
-
-
-@start_router.callback_query(lambda c: c.data == "start_review")
-async def callback_start_review(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Пожалуйста, напишите ваш отзыв.")
-    await state.set_state(ReviewStates.waiting_for_review)  
-    await callback.answer()
+    return user_id == int(ADMINISTRATOR) or user_id == int(ADMIN) or user_id == int(ADMINISTRATOR2)
 
 
 @start_router.message(Command('reviews'))
@@ -170,4 +154,29 @@ async def cmd_admin(message: types.Message):
         '/reviews' - просмотр не обработанных отзывов;\n\
         '/all_reviews' - просмотр всех отзывов обработанных (с ответами от админа) и не обработанных;\n\
         '/answer &lt;id&gt;' - ответить на отзыв с определенным id.", parse_mode="HTML")
-    
+
+
+# --- Функция для отправки админу уведомления с кнопкой ответа ---
+async def send_admin_new_review_notification(
+    review_id: int,
+    user_id_ms: int,
+    username: str | None,
+    free_review: str,
+    source: str,
+):
+    text = (
+        f"Новый отзыв #{review_id} от @{username or 'неизвестно'}:\n\n"
+        f"Вопрос 1: В свободной форме расскажите, как вам выставка? Какие произведения понравились больше всего?\n"
+        f"Ответ: {free_review}\n\n"
+        f"Вопрос 2: Откуда вы узнали о выставке?\n"
+        f"Ответ: {source}"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="Ответить",
+                callback_data=f"answer_{review_id}_{user_id_ms}"
+            )
+        ]
+    ])
+    await bot.send_message(int(ADMIN), text, reply_markup=keyboard)
