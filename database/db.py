@@ -55,6 +55,19 @@ class ReviewDB:
             "SELECT id, user_id, username, review, admin_answer FROM reviews WHERE answered = 1"
             )
         return cursor.fetchall()
+    
+
+    def count_users(self) -> int:
+        """Возвращает количество уникальных пользователей, которые воспользовались ботом (например, оставили отзывы)."""
+        cursor = self.conn.execute("SELECT COUNT(DISTINCT user_id) FROM reviews")
+        result = cursor.fetchone()
+        return result[0] if result else 0
+
+    def count_reviews(self) -> int:
+        """Возвращает общее количество отзывов."""
+        cursor = self.conn.execute("SELECT COUNT(*) FROM reviews")
+        result = cursor.fetchone()
+        return result[0] if result else 0
 
 
     def close(self):
