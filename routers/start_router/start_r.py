@@ -22,8 +22,7 @@ def is_admin(user_id: int) -> bool:
     """
     Проверяет, является ли пользователь администратором.
     """
-    # return user_id in {int(ADMINISTRATOR), int(ADMIN), int(ADMINISTRATOR2)}
-    return user_id in {int(ADMIN)}
+    return user_id in {int(ADMINISTRATOR), int(ADMIN), int(ADMINISTRATOR2)}
 
 
 def reorder_review_text(review_text: str) -> str:
