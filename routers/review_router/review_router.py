@@ -58,9 +58,6 @@ async def start_survey(message: types.Message, state: FSMContext, bot: bot):
 
 @review_router.callback_query(lambda c: c.data and c.data.startswith("source_"))
 async def process_source_choice(callback: CallbackQuery, state: FSMContext):
-    """
-    Обрабатывает выбор источника информации о выставке.
-    """
     user_id = callback.from_user.id
     source_option = callback.data.split("_")[1]
     logger.info(f"Пользователь {user_id} выбрал источник {source_option}")
@@ -86,9 +83,6 @@ async def process_source_choice(callback: CallbackQuery, state: FSMContext):
 
 @review_router.message(ReviewStates.waiting_for_custom_source)
 async def process_custom_source(message: types.Message, state: FSMContext):
-    """
-    Обрабатывает ввод собственного источника информации.
-    """
     user_id = message.from_user.id
     logger.info(f"Пользователь {user_id} ввёл собственный источник: {message.text}")
     await state.update_data(source=message.text)
@@ -100,26 +94,38 @@ async def process_custom_source(message: types.Message, state: FSMContext):
 
 @review_router.message(ReviewStates.waiting_for_free_review)
 async def process_free_review(message: types.Message, state: FSMContext):
-    """
-    Обрабатывает свободный отзыв пользователя и завершает опрос.
-    """
     user_id = message.from_user.id
     logger.info(f"Пользователь {user_id} оставил отзыв")
     await state.update_data(free_review=message.text)
 
+    await message.answer(
+        "Выставки на какие темы вы бы хотели увидеть в будущем?"
+    )
+    await state.set_state(ReviewStates.waiting_for_source_subject)
+
+
+@review_router.message(ReviewStates.waiting_for_source_subject)
+async def process_custom_subject(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    logger.info(f"Пользователь {user_id} ввёл тему выставок: {message.text}")
+    await state.update_data(subject=message.text)
+
+    # Завершаем опрос
     await finish_survey(message, state, user_id, message.from_user.username)
 
 
 async def finish_survey(message: types.Message, state: FSMContext, user_id: int, username: str | None):
-    """
-    Сохраняет отзыв в базу, благодарит пользователя и уведомляет администраторов.
-    """
     logger.info(f"Завершение опроса пользователя {user_id}")
     data = await state.get_data()
     free_review = data.get("free_review", "")
     source = data.get("source", "")
+    subject = data.get("subject", "")
 
-    full_review = f"Отзыв: {free_review}\n\nОткуда узнал(а): {source}"
+    full_review = (
+        f"Отзыв: {free_review}\n\n"
+        f"Откуда узнал(а): {source}\n"
+        f"Темы выставок, которые хотел(а) бы видеть: {subject}"
+    )
     review_id = review_db.add_review(user_id, username, full_review)
 
     await message.answer(
@@ -132,9 +138,12 @@ async def finish_survey(message: types.Message, state: FSMContext, user_id: int,
 
     for admin_id in ADMINS:
         try:
-            await send_admin_new_review_notification(review_id, user_id, username, free_review, source, int(admin_id))
+            await send_admin_new_review_notification(
+                review_id, user_id, username, free_review, source, subject, int(admin_id)
+            )
         except Exception as e:
             logger.error(f"Ошибка уведомления админа {admin_id}: {e}")
 
     await state.clear()
     logger.info(f"Состояние пользователя {user_id} очищено после завершения опроса")
+

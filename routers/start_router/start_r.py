@@ -1,3 +1,4 @@
+import re
 import logging
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
@@ -21,7 +22,8 @@ def is_admin(user_id: int) -> bool:
     """
     Проверяет, является ли пользователь администратором.
     """
-    return user_id in {int(ADMINISTRATOR), int(ADMIN), int(ADMINISTRATOR2)}
+    # return user_id in {int(ADMINISTRATOR), int(ADMIN), int(ADMINISTRATOR2)}
+    return user_id in {int(ADMIN)}
 
 
 def reorder_review_text(review_text: str) -> str:
@@ -124,16 +126,63 @@ async def process_admin_answer(message: types.Message, state: FSMContext):
     logger.info(f"Отзыв #{review_id} помечен как отвеченный")
 
 
+def parse_review_text(text: str) -> dict:
+    """
+    Парсит отзыв из формата:
+
+    Отзыв: <текст отзыва>
+
+    Откуда узнал(а): <источник>
+    Темы выставок, которые хотел(а) бы видеть: <темы>
+
+    Возвращает dict с ключами 'review', 'source', 'subject'.
+    """
+    review = ""
+    source = ""
+    subject = ""
+
+    # Разобьём на строки и найдём ключевые строки
+    lines = text.splitlines()
+    # Собираем свободный отзыв — все строки до первой строки, начинающейся с "Откуда узнал(а):"
+    review_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("Откуда узнал(а):"):
+            break
+        review_lines.append(line)
+        i += 1
+    review = "\n".join(review_lines).strip()
+
+    # Теперь ищем источник
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("Откуда узнал(а):"):
+            source = line[len("Откуда узнал(а):"):].strip()
+            i += 1
+            break
+        i += 1
+
+    # Теперь ищем темы выставок
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("Темы выставок, которые хотел(а) бы видеть:"):
+            subject = line[len("Темы выставок, которые хотел(а) бы видеть:"):].strip()
+            break
+        i += 1
+
+    return {
+        "review": review,
+        "source": source,
+        "subject": subject,
+    }
+
+
 @start_router.message(Command('all_reviews'))
 async def cmd_all_reviews(message: types.Message):
-    """
-    Обрабатывает команду /all_reviews — выводит все отзывы, разделяя необработанные и обработанные.
-    """
     user_id = message.from_user.id
-    logger.info(f"Пользователь {user_id} вызвал /all_reviews")
     if not is_admin(user_id):
         await message.answer("Команда доступна только администратору.")
-        logger.warning(f"Доступ запрещён пользователю {user_id} к /all_reviews")
         return
 
     unanswered = review_db.get_unanswered_reviews()
@@ -141,32 +190,40 @@ async def cmd_all_reviews(message: types.Message):
 
     if not unanswered and not answered:
         await message.answer("Отзывов пока нет.")
-        logger.info("Нет отзывов для отображения")
         return
 
     if unanswered:
         await message.answer("📋 *Необработанные отзывы:*", parse_mode="Markdown")
         for review_id, user_id_r, username, review_text in unanswered:
-            formatted_text = reorder_review_text(review_text)
-            text = f"Отзыв #{review_id} от @{username or 'неизвестно'}:\n\n{formatted_text}"
+            parts = parse_review_text(review_text)
+            text = (
+                f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id_r}):\n\n"
+                f"📢 *Откуда узнали:*\n{parts['source'] or '_не указано_'}\n\n"
+                f"📝 *Отзыв:*\n{parts['review'] or '_пустой_'}\n\n"
+                f"🎨 *Темы выставок, которые хотел(а) бы видеть:*\n{parts['subject'] or '_не указано_'}"
+            )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Ответить", callback_data=f"answer_{review_id}_{user_id_r}")]
             ])
-            await message.answer(text, reply_markup=kb)
+            await message.answer(text, parse_mode="Markdown", reply_markup=kb)
     else:
         await message.answer("Нет необработанных отзывов.")
 
     if answered:
         await message.answer("✅ *Обработанные отзывы:*", parse_mode="Markdown")
         for review_id, user_id_r, username, review_text, admin_answer in answered:
-            formatted_text = reorder_review_text(review_text)
-            text = (f"Отзыв #{review_id} от @{username or 'неизвестно'}:\n\n"
-                    f"{formatted_text}\n\n"
-                    f"💬 *Ответ администратора:*\n{admin_answer}")
+            parts = parse_review_text(review_text)
+            text = (
+                f"Отзыв #{review_id} от @{username or 'неизвестно'} (id: {user_id_r}):\n\n"
+                f"📢 *Откуда узнали:*\n{parts['source'] or '_не указано_'}\n\n"
+                f"📝 *Отзыв:*\n{parts['review'] or '_пустой_'}\n\n"
+                f"🎨 *Темы выставок, которые хотел(а) бы видеть:*\n{parts['subject'] or '_не указано_'}\n\n"
+                f"💬 *Ответ администратора:*\n{admin_answer}"
+            )
             await message.answer(text, parse_mode="Markdown")
     else:
         await message.answer("Нет обработанных отзывов.")
-    logger.info(f"Отправлены все отзывы пользователю {user_id}")
+
 
 
 @start_router.message(Command(commands=["answer"]))
@@ -253,13 +310,14 @@ async def cmd_admin(message: types.Message):
 
 
 async def send_admin_new_review_notification(
-    review_id: int,
-    user_id_ms: int,
-    username: str | None,
-    free_review: str,
-    source: str,
-    admin_id: int
-):
+        review_id: int,
+        user_id_ms: int,
+        username: str | None,
+        free_review: str,
+        source: str,
+        subject: str,
+        admin_id: int
+    ):
     """
     Отправляет уведомление администратору о новом отзыве с кнопкой "Ответить".
 
@@ -272,10 +330,12 @@ async def send_admin_new_review_notification(
     """
     text = (
         f"Новый отзыв #{review_id} от @{username or 'неизвестно'}:\n\n"
-        f"Вопрос 1: Откуда вы узнали о выставке?\n"
+        f"📢 Вопрос 1: Откуда вы узнали о выставке?\n"
         f"Ответ: {source}\n\n"
-        f"Вопрос 2: В свободной форме расскажите, как вам выставка? Какие произведения понравились больше всего?\n"
-        f"Ответ: {free_review}"
+        f"📝 Вопрос 2: В свободной форме расскажите, как вам выставка? Какие произведения понравились больше всего?\n"
+        f"Ответ: {free_review}\n\n"
+        f"🎨 Вопрос 3: Темы выставок, которые хотел(а) бы видеть:\n"
+        f"Ответ: {subject}"
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -290,3 +350,4 @@ async def send_admin_new_review_notification(
         logger.info(f"Отправлено уведомление админу {admin_id} о отзыве #{review_id}")
     except Exception as e:
         logger.error(f"Ошибка отправки уведомления админу {admin_id}: {e}")
+
